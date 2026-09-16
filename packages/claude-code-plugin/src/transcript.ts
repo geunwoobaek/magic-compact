@@ -298,10 +298,45 @@ function isTranscriptRow(value: unknown): value is TranscriptRow {
   );
 }
 
+const MISSING_TRANSCRIPT_ATTEMPTS = 5;
+const MISSING_TRANSCRIPT_RETRY_MS = 100;
+
+function isMissingFileError(error: unknown): boolean {
+  return isRecord(error) && error["code"] === "ENOENT";
+}
+
+function missingTranscriptError(transcriptPath: string): Error {
+  return new Error(
+    [
+      `no transcript file at ${transcriptPath}.`,
+      "Claude Code has not written this session to disk yet.",
+      "This happens when the session was just created (for example with",
+      "--fork-session or --resume) and /magic-compact is its first prompt.",
+      "Send any other message first, then run /magic-compact.",
+    ].join(" "),
+  );
+}
+
+async function readTranscriptFile(transcriptPath: string): Promise<string> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await readFile(transcriptPath, "utf8");
+    } catch (error) {
+      if (!isMissingFileError(error)) {
+        throw error;
+      }
+      if (attempt >= MISSING_TRANSCRIPT_ATTEMPTS) {
+        throw missingTranscriptError(transcriptPath);
+      }
+      await Bun.sleep(MISSING_TRANSCRIPT_RETRY_MS);
+    }
+  }
+}
+
 async function readTranscriptEntries(
   transcriptPath: string,
 ): Promise<unknown[]> {
-  const content = await readFile(transcriptPath, "utf8");
+  const content = await readTranscriptFile(transcriptPath);
   return content
     .split("\n")
     .filter(line => line.trim() !== "")
