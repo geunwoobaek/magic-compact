@@ -24,9 +24,8 @@ describe("reading a transcript", () => {
     const directory = await mkdtemp(join(tmpdir(), "magic-compact-"));
     const transcriptPath = join(directory, "never-written.jsonl");
 
-    const failure = readTranscriptRows(transcriptPath);
-
-    await expect(failure).rejects.toThrow(/--fork-session/);
-    await expect(failure).rejects.toThrow(/Send any other message first/);
+    await expect(readTranscriptRows(transcriptPath)).rejects.toThrow(
+      /first prompt in a new session.*--fork-session.*Send any other message first/,
+    );
   });
 });

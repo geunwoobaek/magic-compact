@@ -298,45 +298,29 @@ function isTranscriptRow(value: unknown): value is TranscriptRow {
   );
 }
 
-const MISSING_TRANSCRIPT_ATTEMPTS = 5;
-const MISSING_TRANSCRIPT_RETRY_MS = 100;
-
-function isMissingFileError(error: unknown): boolean {
-  return isRecord(error) && error["code"] === "ENOENT";
-}
-
-function missingTranscriptError(transcriptPath: string): Error {
-  return new Error(
-    [
-      `no transcript file at ${transcriptPath}.`,
-      "Claude Code has not written this session to disk yet.",
-      "This happens when the session was just created (for example with",
-      "--fork-session or --resume) and /magic-compact is its first prompt.",
-      "Send any other message first, then run /magic-compact.",
-    ].join(" "),
-  );
-}
-
-async function readTranscriptFile(transcriptPath: string): Promise<string> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await readFile(transcriptPath, "utf8");
-    } catch (error) {
-      if (!isMissingFileError(error)) {
-        throw error;
-      }
-      if (attempt >= MISSING_TRANSCRIPT_ATTEMPTS) {
-        throw missingTranscriptError(transcriptPath);
-      }
-      await Bun.sleep(MISSING_TRANSCRIPT_RETRY_MS);
-    }
-  }
-}
-
 async function readTranscriptEntries(
   transcriptPath: string,
 ): Promise<unknown[]> {
-  const content = await readTranscriptFile(transcriptPath);
+  let content: string;
+  try {
+    content = await readFile(transcriptPath, "utf8");
+  } catch (error) {
+    if (!isRecord(error) || error["code"] !== "ENOENT") {
+      throw error;
+    }
+
+    throw new Error(
+      [
+        `No transcript file exists at ${transcriptPath}.`,
+        "Claude Code has not written this session to disk yet.",
+        "This happens when /magic-compact is the first prompt in a new",
+        "session, including one created with --fork-session.",
+        "Send any other message first, then run /magic-compact.",
+      ].join(" "),
+      { cause: error },
+    );
+  }
+
   return content
     .split("\n")
     .filter(line => line.trim() !== "")

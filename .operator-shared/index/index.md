@@ -22,6 +22,7 @@ read_if: Working in any part of the repository; read before exploring or modifyi
 - `.prettierrc` — Prettier config: arrowParens avoid, trailingComma all
 - `.prettierignore` — Ditto
 - `tsconfig.json` — Ditto
+- `bunfig.toml` — Scopes Bun test discovery to maintained package tests
 - `bun.lock` — Ditto
 - `node_modules/` — Dependencies; do not list files
 
