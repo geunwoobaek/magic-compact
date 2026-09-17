@@ -301,7 +301,26 @@ function isTranscriptRow(value: unknown): value is TranscriptRow {
 async function readTranscriptEntries(
   transcriptPath: string,
 ): Promise<unknown[]> {
-  const content = await readFile(transcriptPath, "utf8");
+  let content: string;
+  try {
+    content = await readFile(transcriptPath, "utf8");
+  } catch (error) {
+    if (!isRecord(error) || error["code"] !== "ENOENT") {
+      throw error;
+    }
+
+    throw new Error(
+      [
+        `No transcript file exists at ${transcriptPath}.`,
+        "Claude Code has not written this session to disk yet.",
+        "This happens when /magic-compact is the first prompt in a new",
+        "session, including one created with --fork-session.",
+        "Send any other message first, then run /magic-compact.",
+      ].join(" "),
+      { cause: error },
+    );
+  }
+
   return content
     .split("\n")
     .filter(line => line.trim() !== "")

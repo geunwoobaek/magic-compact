@@ -36,3 +36,7 @@ read_if: Working on the Claude Code plugin; read before exploring or modifying t
 - `transcript.ts` — Transcript row/turn/copy models and transcript access
 - `omission.ts` — Omission cache load/save, `allocateOmission`, `readOmittedContent`
 - `mcp.ts` — MCP server exposing `read_omitted_content`
+
+### `test/` — Bun tests
+
+- `transcript.test.ts` — Transcript file parsing and missing-file diagnostics

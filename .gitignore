@@ -2,8 +2,8 @@
 
 node_modules
 
-# OpenCode source code
-/src-*
+# Local reference source trees
+/reference/
 
 # output
 out

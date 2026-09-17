@@ -177,6 +177,7 @@ The MCP server is a minimal stdio-based server implemented using `@modelcontextp
 - If compaction determines there is nothing to compact, the unused destination transcript path is discarded.
 - Temporary analysis transcripts are deleted in cleanup after summary generation.
 - The hook returns `continue: false` with a failure `stopReason` so Claude Code does not continue handling the slash command as normal prompt input.
+- If `/magic-compact` is the first prompt in a new or forked session, Claude Code has not created that session's transcript yet. The attempt fails immediately with guidance to send another message before retrying.
 
 ## Current Divergences From Core/OpenCode
 
