@@ -3,11 +3,14 @@ import { unlink } from "node:fs/promises";
 import { loadOmissionCache, saveOmissionCache } from "./omission";
 import { pruneTranscriptRow } from "./prune";
 import {
+  appendCustomTitle,
   buildAssistantTurns,
   copyTranscriptToNewSession,
+  createTranscriptSession,
   isRecord,
   readActiveTranscriptRows,
   readPreservedMetadataEntries,
+  resolveSessionTitle,
   type Turn,
   type TranscriptRow,
   writeTranscriptEntries,
@@ -24,6 +27,43 @@ const POST_COMPACTION_NOTICE = `<post-compaction-notice>
 A compaction operation has just been applied to all messages above. You may have to reread certain files to regain context. Certain historical tool input/output may have been omitted due to length. If the exact I/O of the tool call needs to be retrieved and functionality cannot be replicated via a new tool call, call the read_omitted_content tool with the appropriate Content ID to reread the tool I/O content.
 </post-compaction-notice>`;
 const SYNTHETIC_MODEL = "<synthetic>";
+
+/**
+ * Compacts a session into a fresh destination session and labels the source
+ * session as uncompacted. Returns the destination session id, or `null` when
+ * the session has nothing left to compact.
+ */
+export async function compactSession(
+  sourceTranscriptPath: string,
+  sourceSessionId: string,
+  keepTurns: number,
+): Promise<string | null> {
+  const destination = await createTranscriptSession(sourceTranscriptPath);
+  const compacted = await compactTranscript(
+    sourceTranscriptPath,
+    destination.transcriptPath,
+    destination.sessionId,
+    keepTurns,
+  );
+  if (!compacted) {
+    await unlink(destination.transcriptPath).catch(() => undefined);
+    return null;
+  }
+
+  try {
+    const title = await resolveSessionTitle(sourceTranscriptPath);
+    if (title !== null) {
+      const label = title.startsWith("[UNCOMPACTED] ")
+        ? title
+        : `[UNCOMPACTED] ${title}`;
+      await appendCustomTitle(sourceTranscriptPath, sourceSessionId, label);
+    }
+  } catch {
+    // Best-effort labeling; compaction already succeeded.
+  }
+
+  return destination.sessionId;
+}
 
 export async function compactTranscript(
   sourceTranscriptPath: string,

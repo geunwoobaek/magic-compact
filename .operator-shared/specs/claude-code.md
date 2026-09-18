@@ -42,6 +42,65 @@ To enter the compacted session, run the following command:
 /resume <new-session-id>
 ```
 
+## Automatic Compaction
+
+Optional replacement for Claude Code's built-in automatic compaction. Off unless `MAGIC_COMPACT_AUTO` is set to a value other than empty, `0`, or `false`.
+
+- The plugin registers a `PreCompact` command hook with matcher `auto` in `hooks/hooks.json`.
+- The hook only decides; it never compacts. Compaction runs in a detached worker process.
+- Blocking is expressed as `{"decision": "block", "reason": ...}`. The reason reaches the model, so it carries the user-facing instruction.
+- Any parse, state, or spawn failure writes `suppressOutput` only, which lets built-in compaction proceed.
+
+### Why The Hook Does Not Compact
+
+Claude Code does not wait for a `PreCompact` hook before starting its own compaction; both run at once. Compaction takes longer than the built-in summary, so a hook that compacts before answering always answers too late: the built-in summary is already applied, the late block reverts it, the conversation returns to its uncompacted size, and the next automatic trigger compacts it with the built-in summary anyway. Answering immediately keeps the block ahead of that race.
+
+### State
+
+- Location: `~/.claude/magic-compact/auto/{sessionId}.json`.
+- Fields: `phase` (`running`, `ready`, `failed`), `startedAt`, `sourceSessionId`, `transcriptPath`, `transcriptBytes`, `workerPid`, `destinationSessionId`, `announced`, `failure`.
+- `transcriptBytes` is the transcript size when blocking started, and is the baseline for the growth budget.
+- The hook writes the state once when it starts a worker; the worker owns the file after that and records its own pid, so a worker that finishes quickly is never overwritten by its launcher.
+- Written through a temporary file and renamed, because the hook and its worker both write it.
+- A missing, unreadable, or unrecognized state file counts as no attempt.
+
+### Decisions
+
+| State                                   | Decision                                                                 |
+| --------------------------------------- | ------------------------------------------------------------------------ |
+| No state                                | Start a worker and block                                                 |
+| `running`, worker alive, within budgets | Block                                                                    |
+| `running`, time budget spent            | Step aside                                                               |
+| `running`, growth budget spent          | Step aside                                                               |
+| `running`, worker gone                  | Step aside                                                               |
+| `ready`, not yet announced              | Block and instruct the model to give the user `/resume <new-session-id>` |
+| `ready`, already announced              | Step aside                                                               |
+| `failed`                                | Step aside                                                               |
+
+- The time budget is 600 seconds from the first trigger, overridable with `MAGIC_COMPACT_AUTO_BLOCK_SECONDS`. It bounds how long a stalled worker can hold compaction off.
+- The growth budget is 128 KiB of transcript growth since the first trigger, overridable with `MAGIC_COMPACT_AUTO_GROWTH_KB`. Both overrides ignore values that are not a positive number.
+- The growth budget exists because holding built-in compaction off keeps a conversation above its compaction threshold, spending whatever headroom is left before the model's context limit. A conversation that keeps growing through that window exhausts the context window and the request fails outright.
+- Measured on a 200k model with a threshold that left about 3k tokens of headroom: 157 KB of transcript growth while compaction was held off carried the conversation to `preTokens` 235,985. The recovery compaction that followed reached `postTokens` 205,709, still over the limit, and the request failed with `Prompt is too long`. The same measurement gives the sizing rule: a transcript grows by roughly four bytes per token of context, so 128 KiB is on the order of thirty thousand tokens of headroom.
+- Neither budget can be derived. A hook cannot read the model's context limit or the threshold compaction fired at, so the budgets are proxies a user can widen when their threshold leaves a wide margin.
+- A session is compacted at most once. After the resume command is announced, later triggers fall back to built-in compaction.
+
+### Worker
+
+1. Wait until the source transcript stops changing: 5 seconds of unchanged size and mtime, giving up after 120 seconds.
+2. Count the user rows in the source transcript, skipping compaction's own.
+3. Compact with `N = 0` into a new destination session, reusing the `/magic-compact` flow.
+4. Count them again. If the count moved and step 1 had seen the transcript go quiet, delete the destination session and go back to step 1, up to three attempts in all.
+5. Record `ready` with the destination session id, or `failed` with the error.
+
+The wait exists because automatic compaction fires in the middle of a turn, and compaction snapshots the transcript as it stands when it starts. Without the wait, the rest of that turn is missing from the compacted session.
+
+Compaction itself takes long enough for the conversation to move on, and a destination built from a transcript that has since grown is missing whatever came after. The retry throws that destination away and takes the snapshot again. Only user rows can serve as the signal, and only with compaction's own excluded: compaction writes its exchange back into the source session, one user row headed `# Attention: Conversation Compaction Required` and the assistant rows answering it, so the file size and the total row count both grow on every compaction whether or not the conversation moved. Tool results are user rows too, which is what makes the count right rather than merely convenient: a session still working through a turn has moved past the snapshot just as surely as one the user typed into. A transcript that never went quiet within the wait will not go quiet on the next attempt either, so that case hands over the first destination rather than spending another compaction on an equally stale snapshot.
+
+### Limits
+
+- Compaction that Claude Code runs to recover from an exhausted context window does not invoke `PreCompact` hooks, so it cannot be replaced. The automatic compaction threshold must stay far enough below the model's context limit for the proactive trigger to fire first.
+- Entering the compacted session still requires the user to run `/resume`, as described under Platform Constraints.
+
 ## Skill Shim
 
 - The plugin includes `skills/magic-compact/SKILL.md` so the command appears as a plugin skill.

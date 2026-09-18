@@ -1,6 +1,19 @@
 {
-  "description": "Intercepts /magic-compact and creates a compacted destination session.",
+  "description": "Intercepts /magic-compact and creates a compacted destination session, and optionally takes over automatic compaction.",
   "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/src/auto-compact-hook.ts\"",
+            "timeout": 30,
+            "statusMessage": "Magic Compact"
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "matcher": "^/(?:claude-magic-compact:)?magic-compact(?:\\s+.*)?$",

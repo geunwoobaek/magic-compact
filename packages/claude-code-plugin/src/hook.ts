@@ -1,11 +1,5 @@
-import { unlink } from "node:fs/promises";
-import { compactTranscript } from "./compact";
+import { compactSession } from "./compact";
 import { parseHookInput, parseMagicCompactCommand } from "./command";
-import {
-  appendCustomTitle,
-  createTranscriptSession,
-  resolveSessionTitle,
-} from "./transcript";
 
 type HookOutput = {
   continue?: false;
@@ -22,15 +16,12 @@ async function main(): Promise<void> {
       return;
     }
 
-    const destination = await createTranscriptSession(input.transcript_path);
-    const compacted = await compactTranscript(
+    const destinationSessionId = await compactSession(
       input.transcript_path,
-      destination.transcriptPath,
-      destination.sessionId,
+      input.session_id,
       keepTurns,
     );
-    if (!compacted) {
-      await unlink(destination.transcriptPath).catch(() => undefined);
+    if (destinationSessionId === null) {
       writeHookOutput({
         continue: false,
         stopReason:
@@ -39,24 +30,12 @@ async function main(): Promise<void> {
       return;
     }
 
-    try {
-      const title = await resolveSessionTitle(input.transcript_path);
-      if (title !== null) {
-        const label = title.startsWith("[UNCOMPACTED] ")
-          ? title
-          : `[UNCOMPACTED] ${title}`;
-        await appendCustomTitle(input.transcript_path, input.session_id, label);
-      }
-    } catch {
-      // Best-effort labeling; compaction already succeeded.
-    }
-
     writeHookOutput({
       continue: false,
       stopReason: [
         "Magic Compact success.",
         "To enter the compacted session, run the following command:",
-        `/resume ${destination.sessionId}`,
+        `/resume ${destinationSessionId}`,
       ].join("\n"),
     });
   } catch (error) {

@@ -118,6 +118,38 @@ Claude Code 向插件暴露的能力不如 OpenCode 多。因此,在 Claude Code
   - 只需复制并粘贴该命令并运行
 - `/magic-stats` 在 Claude Code 上未实现
 
+#### 自动压缩(Claude Code 专属) (实验性)
+
+Magic Compact 可以接管 Claude Code 的自动压缩,让长会话由 Magic Compact 压缩,而不是被内置的摘要块替换。该功能默认关闭。要开启它,请在 Claude Code 设置中加入 `MAGIC_COMPACT_AUTO`:
+
+```json
+{
+  "env": {
+    "MAGIC_COMPACT_AUTO": "1"
+  }
+}
+```
+
+当 Claude Code 启动自动压缩时,Magic Compact 会挡下这次压缩,改为在后台压缩会话。压缩期间你的对话照常继续。压缩完成后,Claude Code 会像 `/magic-compact` 那样告诉你压缩后会话的 `/resume <new-session-id>` 命令。
+
+- 每个会话最多以这种方式压缩一次。如果你不进入压缩后的会话而继续工作,下一次自动压缩将照常由 Claude Code 处理。
+- 如果压缩失败、超过 10 分钟,或压缩期间对话增长超过 128 KiB,Magic Compact 会让开,由 Claude Code 的内置压缩接手。
+- 请让自动压缩阈值明显低于模型的上下文上限。当 Claude Code 为了从耗尽的上下文窗口中恢复而压缩时,它不会运行 `PreCompact` 钩子,Magic Compact 也就看不到那次压缩。
+
+挡下压缩会让对话一直停留在压缩阈值之上,消耗的正是距离模型上下文上限所剩的余量。这就是那两个预算要保护的东西,也是它们被刻意设小的原因:持续增长的对话必须在耗尽上下文之前退回内置压缩。如果你的阈值留有充裕余量,可以多花一些:
+
+```json
+{
+  "env": {
+    "MAGIC_COMPACT_AUTO": "1",
+    "MAGIC_COMPACT_AUTO_BLOCK_SECONDS": "600",
+    "MAGIC_COMPACT_AUTO_GROWTH_KB": "128"
+  }
+}
+```
+
+会话记录每增长约四个字节对应一个上下文 token,因此 `MAGIC_COMPACT_AUTO_GROWTH_KB` 除以四,大致就是被挡下的压缩可以消耗多少千个 token 的余量。
+
 ## 修剪规则
 
 执行 `/magic-compact` 时,修剪仅适用于被摘要的回合。在 OpenCode 上,`/magic-trim [N]` 仅对保留尾部之外的回合应用工具 I/O 规则。

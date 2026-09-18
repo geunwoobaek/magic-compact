@@ -116,6 +116,38 @@ Claude Code does not expose as much capability to plugins vs OpenCode. Therefore
   - Simply copy and paste that command and run it
 - `/magic-stats` is not implemented for Claude Code
 
+#### Automatic Compaction (Claude Code Exclusive) (Experimental)
+
+Magic Compact can take over Claude Code's automatic compaction, so a long session is compacted by Magic Compact instead of being replaced with the built-in summary blob. It is off by default. To turn it on, set `MAGIC_COMPACT_AUTO` in your Claude Code settings:
+
+```json
+{
+  "env": {
+    "MAGIC_COMPACT_AUTO": "1"
+  }
+}
+```
+
+When Claude Code starts an automatic compaction, Magic Compact holds that compaction off and compacts the session in the background instead. Your conversation continues while it runs. Once it finishes, Claude Code tells you the `/resume <new-session-id>` command for the compacted session, exactly as it does for `/magic-compact`.
+
+- A session is compacted this way at most once. If you keep working without resuming, the next automatic compaction is handled by Claude Code as usual.
+- If compaction fails, takes longer than 10 minutes, or the conversation grows by more than 128 KiB while it runs, Magic Compact steps aside and Claude Code's built-in compaction runs.
+- Keep your automatic compaction threshold comfortably below the model's context limit. When Claude Code compacts to recover from an exhausted context window, it does not run `PreCompact` hooks, and Magic Compact never sees that compaction.
+
+Holding compaction off keeps a conversation above its compaction threshold, spending the headroom that is left before the model's context limit. That is what the two budgets protect, and why they are deliberately small: a conversation that keeps growing has to fall back before it runs out of context. If your threshold leaves a wide margin, you can spend more of it:
+
+```json
+{
+  "env": {
+    "MAGIC_COMPACT_AUTO": "1",
+    "MAGIC_COMPACT_AUTO_BLOCK_SECONDS": "600",
+    "MAGIC_COMPACT_AUTO_GROWTH_KB": "128"
+  }
+}
+```
+
+A transcript grows by roughly four bytes per token of context, so `MAGIC_COMPACT_AUTO_GROWTH_KB` divided by four is about how many thousand tokens of headroom a held-off compaction may consume.
+
 ## Pruning Rules
 
 During `/magic-compact`, pruning applies only to summarized turns. On OpenCode, `/magic-trim [N]` applies only the tool I/O rules to turns outside the preserved tail.
